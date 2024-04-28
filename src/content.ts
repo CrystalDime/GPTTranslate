@@ -1,3 +1,5 @@
+import { warn } from "console";
+
 const batchSize = 4;
 const preferredLanguage = navigator.language.split('-')[0];
 let detectedLanguage = '';
@@ -63,8 +65,10 @@ async function gatherTextNodes(element: Node) {
         const childNodes = Array.from(element.childNodes);
         for (let node of childNodes) {
                 if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim().length > 0) {
-                        const detectedLanguage = await getLang(node.textContent);
-                        if (detectedLanguage !== preferredLanguage) {
+                        const nodeDetectedLanguage = await getLang(node.textContent);
+
+                        // Ignore text that isn't in the documents main detected language
+                        if (nodeDetectedLanguage === detectedLanguage) {
                                 allTextNodes.push(node);
                         }
                 } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -81,7 +85,7 @@ function translateInBatches(textNodes: Node[], batchSize: number) {
                 const textArray = batch.map(node => node.textContent?.trim());
 
                 chrome.runtime.sendMessage({ action: "translate", text: textArray }, function (response) {
-                        if (response.translatedText && Array.isArray(response.translatedText) && response.translatedText.length === batch.length) {
+                        if (response.translatedText && Array.isArray(response.translatedText)) {
                                 batch.forEach((node, index) => {
                                         if (document.contains(node.parentElement)) {
                                                 node.textContent = response.translatedText[index];

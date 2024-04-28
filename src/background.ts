@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 });
 
 async function translateText(textArray: string[]) {
-
+        console.log("text to be translated:", textArray);
         const { model, apiKey } = await new Promise<Settings>((resolve) => {
                 chrome.storage.sync.get(['model', 'apiKey'], (items) => {
                         resolve(items);
