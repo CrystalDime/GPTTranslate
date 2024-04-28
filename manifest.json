@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "My Translate Extension",
+  "version": "1.0",
+  "description": "Automatically translates text on web pages using a custom GPT-based model.",
+  "permissions": [
+    "<all_urls>",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "options_page": "public/settings.html",
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["dist/content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "public/settings.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [ "*.html"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}
