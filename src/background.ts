@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+
 chrome.runtime.onInstalled.addListener(() => {
         console.log('Extension installed and running.');
 });
@@ -7,8 +9,8 @@ interface Settings {
         model?: string;
         apiKey?: string;
 }
-
-const basePrompt = "You will be given an array of text to translate into english. Output will be in the form of an ordered json array with key 'messages'";
+// TODO: Allow target language to be variable
+const basePrompt = "You are provided with an array of texts in various languages. Your task is to translate each text into English. The output should be formatted as a JSON array named 'messages'.";
 
 let runningTotalRequest = 0;
 
@@ -65,11 +67,11 @@ async function translateText(textArray: string[]) {
                 if (parsedTranslation.messages && Array.isArray(parsedTranslation.messages)) {
                         return parsedTranslation.messages;
                 } else {
-                        console.error('Invalid response format from the API');
-                        return textArray;
+                        console.warn('Invalid response format from the API');
+                        return JSON.parse(jsonrepair(translatedText)).messages;
                 }
         } catch (error) {
-                console.error('Error parsing the translated text:', error);
-                return JSON.stringify({ messages: textArray });
+                console.warn('Error parsing the translated text:', error);
+                return JSON.parse(jsonrepair(translatedText)).messages;
         }
 }

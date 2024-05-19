@@ -1,20 +1,25 @@
-import { warn } from "console";
-
 const batchSize = 4;
 const preferredLanguage = navigator.language.split('-')[0];
 let detectedLanguage = '';
 
+
+const excludedTags: string[] = ["SCRIPT", "STYLE", "META", "NOSCRIPT", "I"];
+
 if (document.readyState !== 'loading') {
-        setTimeout(() => startTranslation());  // specify batch size
+        setTimeout(startTranslation, 500);  // specify batch size
 } else {
         document.addEventListener('DOMContentLoaded', function () {
-                setTimeout(() => startTranslation());  // specify batch size
+                setTimeout(startTranslation, 500);  // specify batch size
         });
 }
 
 async function startTranslation() {
         const sampleText = document.body.innerText;
         detectedLanguage = await getLang(sampleText);
+
+        if (detectedLanguage.length === 0) {
+                return;
+        }
 
         if (detectedLanguage === preferredLanguage) {
                 console.log("Skipping translation, not needed");
@@ -62,16 +67,22 @@ function translateDocument(batchSize: number) {
 
 async function gatherTextNodes(element: Node) {
         const allTextNodes: Node[] = [];
-        const childNodes = Array.from(element.childNodes);
+        const childNodes = element.childNodes;
         for (let node of childNodes) {
+                console.log(node.textContent);
                 if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim().length > 0) {
-                        const nodeDetectedLanguage = await getLang(node.textContent);
 
-                        // Ignore text that isn't in the documents main detected language
-                        if (nodeDetectedLanguage === detectedLanguage) {
+                        // Ignore text that is a number
+                        if (!isNumber(node.textContent)) {
                                 allTextNodes.push(node);
                         }
+
                 } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        // dont translate certain elements
+                        if (excludedTags.includes((node as HTMLElement).tagName)) {
+                                continue;
+                        }
+
                         const childTextNodes = await gatherTextNodes(node);
                         allTextNodes.push(...childTextNodes);
                 }
@@ -188,9 +199,9 @@ function createTranslationDialog() {
 
 }
 
-
-
-
+function isNumber(str: string): boolean {
+        return !isNaN(Number(str));
+}
 
 
 
