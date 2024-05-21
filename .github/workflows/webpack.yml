@@ -14,7 +14,7 @@ jobs:
       repository-projects: write
     strategy:
       matrix:
-        node-version: [14.x, 16.x, 18.x]
+        node-version: [18.x]
 
     steps:
     - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
       run: npm run build # Ensure this matches your package.json's script for building
 
     - name: Zip Artifacts
-      run: zip -r build.zip ./dist # Replace './dist' with your build output directory
+      run: zip -r build.zip . -x "node_modules/*" # Exclude the node_modules directory
 
     - name: Create Release
       id: create_release
