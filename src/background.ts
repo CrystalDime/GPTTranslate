@@ -10,7 +10,7 @@ interface Settings {
         apiKey?: string;
 }
 // TODO: Allow target language to be variable
-const basePrompt = "You are provided with an array of texts in various languages. Your task is to translate each text into English. The output should be formatted as a JSON array named 'messages'.";
+const basePrompt = "You are provided with an array of texts in various languages. Your task is to translate each text into English. The output should be formatted as a JSON array named 'messages', where each element is just the resulting translated text.";
 
 let runningTotalRequest = 0;
 
@@ -26,7 +26,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 });
 
 async function translateText(textArray: string[]) {
-        console.log("text to be translated:", textArray);
+        console.debug("text to be translated:", textArray);
         const { model, apiKey } = await new Promise<Settings>((resolve) => {
                 chrome.storage.sync.get(['model', 'apiKey'], (items) => {
                         resolve(items);
@@ -41,7 +41,7 @@ async function translateText(textArray: string[]) {
                 return JSON.stringify({ messages: textArray });
         }
 
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response: Response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                         'Content-Type': 'application/json',
@@ -57,9 +57,13 @@ async function translateText(textArray: string[]) {
                 })
         });
 
+        if (!response.ok) {
+                console.error("GPT Request Failed. Status Code:  %d, Messsage: %s", response.status, response.text());
+        }
+
         const data = await response.json();
-        console.log(JSON.stringify(data));
-        console.log("Total requests made: ", runningTotalRequest++);
+        console.debug(JSON.stringify(data));
+        console.debug("Total requests made: ", runningTotalRequest++);
         const translatedText = data.choices[0].message.content.trim();
 
         try {
