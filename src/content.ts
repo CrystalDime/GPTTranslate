@@ -1,21 +1,84 @@
-const batchSize = 4;
+const batchSize = 10; // TODO: Make this configurable/ anything more than 10 seems to cause inconsistency
 const preferredLanguage = navigator.language.split('-')[0];
 let detectedLanguage = '';
 
 const excludedTags: string[] = ["SCRIPT", "STYLE", "META", "NOSCRIPT", "I"];
+const translationRecord: Map<Node, string> = new Map();
+let mutationObserver: MutationObserver;
 
-if (document.readyState !== 'loading') {
-        setTimeout(startTranslation, 500);  // specify batch size
+if (document.readyState === "complete") {
+        setTimeout(startTranslation);
 } else {
-        document.addEventListener('DOMContentLoaded', function () {
-                setTimeout(startTranslation, 500);  // specify batch size
-        });
+        document.onreadystatechange = () => {
+                if (document.readyState === "complete") {
+                        setTimeout(startTranslation);
+                }
+        };
 }
 
 // Interfaces
 interface TranslationResponse {
         translatedText: string[];
 }
+
+interface TranslationCacheEntry {
+        translatedText: string;
+        expiry: number;
+}
+
+class LRUCache {
+        private maxSize: number;
+        private cache: Map<string, TranslationCacheEntry>;
+
+        constructor(maxSize: number) {
+                this.maxSize = maxSize;
+                this.cache = new Map();
+        }
+
+        async loadCache(): Promise<void> {
+                return new Promise((resolve) => {
+                        chrome.storage.local.get('translationCache', (data) => {
+                                if (data.translationCache) {
+                                        this.cache = new Map(Object.entries(data.translationCache));
+                                }
+                                resolve();
+                        });
+                });
+        }
+
+        async saveCache(): Promise<void> {
+                const cacheObject = Object.fromEntries(this.cache);
+                return new Promise((resolve) => {
+                        chrome.storage.local.set({ translationCache: cacheObject }, () => {
+                                resolve();
+                        });
+                });
+        }
+
+        get(key: string): TranslationCacheEntry | undefined {
+                const entry = this.cache.get(key);
+                if (entry && entry.expiry > Date.now()) {
+                        // Refresh key
+                        this.cache.delete(key);
+                        this.cache.set(key, entry);
+                        return entry;
+                } else {
+                        this.cache.delete(key);
+                        return undefined;
+                }
+        }
+
+        set(key: string, value: TranslationCacheEntry): void {
+                if (this.cache.size >= this.maxSize) {
+                        const firstKey = this.cache.keys().next().value;
+                        this.cache.delete(firstKey);
+                }
+                this.cache.set(key, value);
+        }
+}
+
+const cacheExpiryTime = 24 * 60 * 60 * 1000; // 24 hours
+const translationCache = new LRUCache(10000); // Adjust the size according to your needs
 
 // Utility functions
 function isNumber(str: string): boolean {
@@ -59,21 +122,23 @@ async function startTranslation(): Promise<void> {
         }
 }
 
-function translateDocument(batchSize: number): void {
-        console.log("Harvesting text");
+async function translateDocument(batchSize: number): Promise<void> {
+        await translationCache.loadCache(); // Load the cache from storage
+
         gatherTextNodes(document.body).then(allTextNodes => {
                 translateInBatches(allTextNodes, batchSize);
         });
+
         watchForMutation();
 }
 
 const pendingTextNodes: Set<Node> = new Set();
 const textNodeQueue: Set<Node> = new Set();
-let aggregationTimeout: any;
-const aggregationDelay = 200; // 200ms delay
+let aggregationTimeout: NodeJS.Timeout;
+const aggregationDelay = 300; // 200ms delay
 
 function watchForMutation(): void {
-        const observer = new MutationObserver((mutations) => {
+        mutationObserver = new MutationObserver((mutations) => {
                 mutations.forEach((mutation) => {
                         if (mutation.type === 'childList') {
                                 mutation.addedNodes.forEach((node) => {
@@ -101,7 +166,7 @@ function watchForMutation(): void {
                 }, aggregationDelay);
         });
 
-        observer.observe(document.body, {
+        mutationObserver.observe(document.body, {
                 childList: true,
                 subtree: true,
         });
@@ -111,9 +176,10 @@ async function gatherTextNodes(element: Node): Promise<Set<Node>> {
         const allTextNodes: Set<Node> = new Set<Node>();
         const childNodes = element.childNodes;
         for (let node of childNodes) {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim().length > 0) {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim().length > 0 && !translationRecord.get(node)) {
                         // Ignore text that is a number
                         if (!isNumber(node.textContent)) {
+                                translationRecord.set(node, node.textContent); // Store original text
                                 allTextNodes.add(node);
                         }
                 } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -128,22 +194,47 @@ async function gatherTextNodes(element: Node): Promise<Set<Node>> {
         return allTextNodes;
 }
 
-function translateInBatches(textNodesSet: Set<Node>, batchSize: number): void {
+async function translateInBatches(textNodesSet: Set<Node>, batchSize: number): Promise<void> {
         const textNodes = Array.from(textNodesSet);
-        console.log("Making %d requests to GPT", Math.ceil(textNodes.length / batchSize));
-        for (let i = 0; i < textNodes.length; i += batchSize) {
-                const batch = textNodes.slice(i, i + batchSize);
-                const textArray = batch.map(node => node.textContent);
-                chrome.runtime.sendMessage({ action: "translate", text: textArray }, function (response: TranslationResponse) {
+        const cachedResults: Map<Node, string> = new Map();
+        const toTranslate: { node: Node; text: string }[] = [];
+
+        for (const node of textNodes) {
+                const textContent = node.textContent || '';
+                const cacheEntry = translationCache.get(textContent);
+                if (cacheEntry) {
+                        cachedResults.set(node, cacheEntry.translatedText);
+                } else {
+                        toTranslate.push({ node, text: textContent });
+                }
+        }
+
+        // Apply cached translations
+        for (const [node, translatedText] of cachedResults.entries()) {
+                node.textContent = translatedText;
+        }
+
+        // Process batches for remaining translations
+        console.log("Making %d requests to GPT", Math.ceil(toTranslate.length / batchSize));
+        for (let i = 0; i < toTranslate.length; i += batchSize) {
+                const batch = toTranslate.slice(i, i + batchSize);
+                const textArray = batch.map(item => item.text);
+                chrome.runtime.sendMessage({ action: "translate", text: textArray }, async function (response: TranslationResponse) {
                         if (response.translatedText && Array.isArray(response.translatedText)) {
-                                batch.forEach((node, index) => {
-                                        if (document.contains(node)) {
-                                                if (typeof (response?.translatedText[index]) !== "string") {
-                                                        console.error(response?.translatedText[index], typeof (response?.translatedText[index], "Index : ", index));
-                                                }
-                                                node.textContent = response.translatedText[index];
+                                batch.forEach((item, index) => {
+                                        const node = item.node;
+                                        const translatedText = response.translatedText[index];
+                                        if (document.contains(node) && translatedText) {
+                                                node.textContent = translatedText;
+                                                // Write to cache if detected language is English
+                                                getLang(translatedText).then((langDetected: string) => {
+                                                        if (langDetected === 'en') {
+                                                                translationCache.set(item.text, { translatedText, expiry: Date.now() + cacheExpiryTime });
+                                                        }
+                                                })
                                         }
                                 });
+                                await translationCache.saveCache(); // Save the updated cache to storage
                         }
                 });
         }
@@ -205,21 +296,27 @@ function createTranslationDialog(): void {
                 });
 }
 
-// Chrome runtime message listener
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-        if (request.action === 'getDetectedLanguage') {
-                sendResponse({ detectedLanguage: detectedLanguage });
-        } else if (request.action === 'startTranslation') {
-                const alwaysTranslate = request.alwaysTranslate;
-                if (alwaysTranslate) {
-                        chrome.storage.sync.get('alwaysTranslateLanguages', function (data) {
-                                const alwaysTranslateLanguages = data.alwaysTranslateLanguages || [];
-                                if (!alwaysTranslateLanguages.includes(detectedLanguage)) {
-                                        alwaysTranslateLanguages.push(detectedLanguage);
-                                        chrome.storage.sync.set({ alwaysTranslateLanguages: alwaysTranslateLanguages });
-                                }
-                        });
+// Function to untranslate the document
+function untranslateDocument(): void {
+        if (mutationObserver) {
+                mutationObserver.disconnect();
+        }
+        translationRecord.forEach((originalText: string, node: Node) => {
+                if (document.contains(node)) {
+                        node.textContent = originalText;
                 }
-                translateDocument(batchSize);
+        });
+
+        translationRecord.clear();
+}
+
+// Listen for untranslatePage request
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === "untranslatePage") {
+                untranslateDocument();
+                sendResponse({ status: "success" });
+        } else if (request.action === "translatePage") {
+                startTranslation();
+                sendResponse({ status: "success" });
         }
 });

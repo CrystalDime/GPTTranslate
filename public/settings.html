@@ -2,25 +2,47 @@
 <html>
 <head>
     <title>Extension Settings</title>
+    <style>
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <h1>Extension Settings</h1>
-    <label for="model">Model:</label>
-    <select id="model">
-        <option value="gpt-3.5-turbo">GPT-3.5-turbo</option>
-        <option value="gpt-3.5-turbo-1106">gpt-3.5-turbo-1106</option>
-        <option value="gpt-3.5-turbo-0613">gpt-3.5-turbo-0613</option>
-        <option value="gpt-3.5-turbo-0301">gpt-3.5-turbo-0301</option>
-        <option value="gpt-3.5-turbo-0125">gpt-3.5-turbo-0125</option>
-        <option value="gpt-4-turbo">gpt-4-turbo</option>
-        <option value="gpt-4-turbo-2024-04-09">gpt-4-turbo-2024-04-09</option>
-        <option value="gpt-4o">GPT-4o</option>
-    </select>
-    <br>
-    <label for="apiKey">API Key:</label>
-    <input type="text" id="apiKey">
-    <br>
-    <button id="saveSettings">Save Settings</button>
+    <div class="button-container">
+        <button id="translatePage">Translate Page</button>
+        <button id="untranslatePage">Untranslate Page</button>
+    </div>
+    <div>
+        <label for="model">Model:</label>
+        <select id="model"></select>
+    </div>
+    <div>
+        <label for="openaiApiKey">OpenAI API Key:</label>
+        <br>
+        <input type="text" id="openaiApiKey">
+    </div>
+    <div>
+        <label for="googleApiKey">Google API Key:</label>
+        <br>
+        <input type="text" id="googleApiKey">
+    </div>
+    <div>
+        <label for="anthropicApiKey">Anthropic API Key:</label>
+        <br>
+        <input type="text" id="anthropicApiKey">
+    </div>
+    <div>
+        <label for="deepseekApiKey">Deepseek API Key: </label>
+        <br>
+        <input type="text" id="deepseekApiKey">
+    </div>
+    <div>
+        <button id="saveSettings">Save Settings</button>
+    </div>
 
     <script src="../dist/settings.js"></script>
 </body>
